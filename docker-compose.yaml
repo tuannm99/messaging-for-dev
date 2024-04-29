@@ -1,15 +1,55 @@
 version: '3.8'
 
 services:
-  rabbitmq:
-    image: rabbitmq:3.13-management-alpine
-    container_name: 'rabbit-local'
-    environment:
-      RABBITMQ_DEFAULT_USER: "rabbitmq"
-      RABBITMQ_DEFAULT_PASS: "rabbitmq"
-      RABBITMQ_DEFAULT_VHOST: "/"
-    volumes:
-      - ./data:/var/lib/rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"
+    rabbitmq:
+        image: rabbitmq:3.13-management-alpine
+        container_name: 'rabbit-local'
+        environment:
+            RABBITMQ_DEFAULT_USER: 'rabbitmq'
+            RABBITMQ_DEFAULT_PASS: 'rabbitmq'
+            RABBITMQ_DEFAULT_VHOST: '/'
+        volumes:
+            - ./data:/var/lib/rabbitmq
+        ports:
+            - '5672:5672'
+            - '15672:15672'
+
+    nats:
+        image: nats:latest
+        ports:
+            - '8222:8222'
+            - '4222:4222'
+        command: '--cluster_name NATS --cluster nats://0.0.0.0:6222 --http_port 8222'
+
+    zookeeper:
+        image: confluentinc/cp-zookeeper:7.2.1
+        hostname: zookeeper
+        container_name: 'zookeeper-local'
+        ports:
+            - '2181:2181'
+        environment:
+            ZOOKEEPER_CLIENT_PORT: 2181
+            ZOOKEEPER_TICK_TIME: 2000
+
+    kafka:
+        image: confluentinc/cp-server:7.2.1
+        hostname: kafka1
+        container_name: 'kafka1-local'
+        depends_on:
+            - zookeeper
+        ports:
+            - '9092:9092'
+            - '9997:9997'
+        environment:
+            KAFKA_BROKER_ID: 1
+            KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+            KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+            KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+            KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+            KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+            KAFKA_CONFLUENT_LICENSE_TOPIC_REPLICATION_FACTOR: 1
+            KAFKA_CONFLUENT_BALANCER_TOPIC_REPLICATION_FACTOR: 1
+            KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+            KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+            KAFKA_JMX_PORT: 9997
+            KAFKA_JMX_HOSTNAME: kafka

@@ -11,6 +11,7 @@ const run = async () => {
     const con = await connection()
 
     const channel = await con.createConfirmChannel()
+    await channel.waitForConfirms() // how to test >??
 
     const queue = 'confirm_channel_queue'
     const ex = 'confirm_channel_ex'
@@ -32,8 +33,7 @@ const run = async () => {
     )
 
     channel.publish(ex, '', msgParser.toBuffer({msg: 'hello'}), {deliveryMode: 2, mandatory: true})
-    await channel.waitForConfirms() // how to test >??
-    console.log('❤❤❤ tuannm: [index.js][36]confirm')
+    console.log('❤❤❤ --> pub')
 }
 
 run()
