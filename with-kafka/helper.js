@@ -1,146 +1,134 @@
 const kafka = require('node-rdkafka')
 const {KAFKA_BROKER_LIST} = require('./constants')
 
-/**
- * @returns {Promise<kafka.Producer>} producer
- */
-const kafkaProducer = async () => {
-    const producer = new kafka.Producer({
-        'metadata.broker.list': KAFKA_BROKER_LIST,
-        // 'allow.auto.create.topics': true,
-        'client.id': 'kafka_client_id_1',
-        'compression.codec': 'gzip',
-        'retry.backoff.ms': 200,
-        'message.send.max.retries': 10,
-        'socket.keepalive.enable': true,
-        'queue.buffering.max.messages': 100000,
-        'queue.buffering.max.ms': 1000,
-        'batch.num.messages': 1000000,
-        dr_cb: true
-    })
+class KafkaManager {
+    /** @private */
+    constructor(brokerList = KAFKA_BROKER_LIST) {
+        /** @private */
+        this.brokerList = brokerList
+        /** @private */
+        this.instance = null
+    }
 
-    producer.on('connection.failure', (error, clientMetrics) => {
-        if (error) {
-            console.log('Connect failed', error)
-            return
+    /**
+     * @returns {KafkaManager} instance
+     */
+    static getInstance(brokerList = KAFKA_BROKER_LIST) {
+        if (!this.instance) {
+            return new KafkaManager(brokerList)
+        } else {
+            return this.instance
         }
-        console.log('clientMetrics', clientMetrics)
-    })
+    }
 
-    // Any errors we encounter, including connection errors
-    producer.on('event.error', (err) => {
-        console.error('Error from producer', err)
-    })
-
-    producer.on('ready', (info, _metadata) => {
-        console.log(`ready info=${JSON.stringify(info)}`)
-    })
-
-    // We must either call .poll() manually after sending messages
-    // or set the producer to poll on an interval (.setPollInterval).
-    // Without this, we do not get delivery events and the queue
-    // will eventually fill up.
-    producer.setPollInterval(100)
-
-    return new Promise((resolve, reject) =>
-        producer.connect({}, (e, _data) => {
-            if (e) reject(e)
-            resolve()
-        })
-    )
-        .then(() => {
-            return producer
-        })
-        .catch((err) => console.error(err))
-}
-
-/**
- * @returns {Promise<kafka.KafkaConsumer>} consumer
- */
-const kafkaConsumer = async () => {
-    const consumer = new kafka.KafkaConsumer(
-        {
-            'metadata.broker.list': KAFKA_BROKER_LIST,
-            'group.id': 'kafka',
-            'partition.assignment.strategy': 'roundrobin',
-            // 'enable.auto.commit': true
-            rebalance_cb: (err, assignment) => {
-                if (err) {
-                    if (err.code === kafka.CODES.ERRORS.ERR__ASSIGN_PARTITIONS) {
-                        console.error('❤❤❤ tuannm: [helper.js][66][err]', err)
-                        // TODO: -> reassign
-                    } else if (err.code == kafka.CODES.ERRORS.ERR__REVOKE_PARTITIONS) {
-                        console.error('❤❤❤ tuannm: [helper.js][69][err]', err)
-                        // TODO: -> reassign
-                    } else {
-                        console.error(err)
-                    }
-                    return null
-                }
-                console.log('❤❤❤ tuannm: [helper.js][61][assignment]', assignment)
+    /**
+     * @param {Object} arg
+     * @param {kafka.ConsumerGlobalConfig} arg.config
+     * @param {kafka.ConsumerTopicConfig} arg.topicConfig
+     * @param {(arg: kafka.Message) => void} arg.onDataCallback
+     * @returns {Promise<kafka.KafkaConsumer>} consumer
+     */
+    async createConsumer({config = {}, topicConfig = {}, onDataCallback}) {
+        const consumer = new kafka.KafkaConsumer(
+            {
+                'metadata.broker.list': this.brokerList,
+                ...config
             },
-            offset_commit_cb: (err, topicPartitions) => {
-                if (err) {
-                    // There was an error committing
-                    console.error(err)
-                    return
-                } else {
-                    // Commit went through. Let's log the topic partitions
-                    console.log(topicPartitions)
-                }
+            {
+                'auto.offset.reset': 'earliest',
+                ...topicConfig
             }
-        },
-        {}
-    )
+        )
 
-    consumer.on('connection.failure', (error, _clientMetrics) => {
-        console.log('Connect failed', error)
-    })
+        return new Promise((resolve, reject) => {
+            consumer
+                .on('ready', () => {
+                    console.log('consumer ready')
+                    resolve(consumer)
+                })
+                .on('data', onDataCallback)
+                .on('connection.failure', (err) => {
+                    console.error('connection failure')
+                    if (err) reject(err)
+                })
+                .on('event.error', (err) => {
+                    console.error('Error from event', err)
+                })
+                .on('rebalance', (err, assignments) => {
+                    if (err) {
+                        console.error(`rebalance error=${JSON.stringify(err)}`)
+                        return
+                    }
+                    console.log(`assignments: ${JSON.stringify(assignments)}`)
+                })
+                .on('offset.commit', (err, topicPartitions) => {
+                    if (err) {
+                        console.error(`offset commit error=${JSON.stringify(err)}`)
+                        return
+                    }
+                    console.log(`topic pattitions: ${JSON.stringify(topicPartitions)}`)
+                })
 
-    consumer.on('event.error', (err) => {
-        console.error('Error from producer', err)
-    })
-
-    consumer.on('ready', (info, _metadata) => {
-        console.log(`ready info=${JSON.stringify(info)}`)
-    })
-
-    consumer.on('rebalance', (err, assignments) => {
-        if (err) {
-            console.error(`rebalance error=${JSON.stringify(err)}`)
-            return
-        }
-        console.log(`assignments: ${JSON.stringify(assignments)}`)
-    })
-
-    consumer.on('offset.commit', (err, topicPartitions) => {
-        if (err) {
-            console.error(`offset commit error=${JSON.stringify(err)}`)
-            return
-        }
-        console.log(`topic pattitions: ${JSON.stringify(topicPartitions)}`)
-    })
-
-    return new Promise((resolve, reject) =>
-        consumer.connect({}, (e, _data) => {
-            if (e) reject(e)
-
-            resolve()
+            consumer.connect({}, (err, meta) => {
+                if (err) console.error(err)
+                console.log(meta)
+            })
         })
-    )
-        .then(() => {
-            return consumer
+    }
+
+    /**
+     * @param {Object} arg
+     * @param {kafka.ProducerGlobalConfig} arg.config
+     * @param {kafka.ProducerTopicConfig} arg.topicConfig
+     * @param {(err: kafka.LibrdKafkaError, report: kafka.DeliveryReport) => any} arg.onDeliveryReport
+     * @returns {Promise<kafka.Producer>} producer
+     */
+    async createProducer({config = {}, topicConfig = {}, onDeliveryReport}) {
+        const producer = new kafka.Producer(
+            {
+                'metadata.broker.list': this.brokerList,
+                // 'allow.auto.create.topics': true,
+                // 'client.id': 'kafka_client_id_default',
+                // 'compression.codec': 'gzip',
+                // 'retry.backoff.ms': 200,
+                // 'message.send.max.retries': 10,
+                // 'socket.keepalive.enable': true,
+                // 'queue.buffering.max.messages': 100000,
+                // 'queue.buffering.max.ms': 1000,
+                // 'batch.num.messages': 1000000,
+                dr_cb: true,
+                ...config
+            },
+            {
+                ...topicConfig
+            }
+        )
+
+        return new Promise((resolve, reject) => {
+            producer
+                .on('ready', () => {
+                    console.log('producer ready')
+                    resolve(producer)
+                })
+                .on('connection.failure', (error, clientMetrics) => {
+                    if (error) {
+                        console.log('Connect failed', error)
+                        return
+                    }
+                    console.log('clientMetrics', clientMetrics)
+                })
+                .on('delivery-report', onDeliveryReport)
+                .on('event.error', (err) => {
+                    console.warn('producer event.error', err)
+                    reject(err)
+                })
+            producer.setPollInterval(100)
+
+            producer.connect()
         })
-        .catch((err) => console.error(err))
+    }
 }
-
-const kafkaAdmin = async () => {}
-
-const kafkaStream = async () => {}
 
 module.exports = {
-    kafkaStream,
-    kafkaProducer,
-    kafkaConsumer,
-    kafkaAdmin
+    KafkaManager
 }
