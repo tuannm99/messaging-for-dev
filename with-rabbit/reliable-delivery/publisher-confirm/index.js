@@ -9,9 +9,7 @@ const connection = async () => {
 
 const run = async () => {
     const con = await connection()
-
     const channel = await con.createConfirmChannel()
-    await channel.waitForConfirms() // how to test >??
 
     const queue = 'confirm_channel_queue'
     const ex = 'confirm_channel_ex'
@@ -32,8 +30,19 @@ const run = async () => {
         }
     )
 
-    channel.publish(ex, '', msgParser.toBuffer({msg: 'hello'}), {deliveryMode: 2, mandatory: true})
-    console.log('❤❤❤ --> pub')
+    channel.publish(
+        ex,
+        '',
+        msgParser.toBuffer({msg: 'hello'}),
+        {deliveryMode: 2, mandatory: true},
+        (err, _) => {
+            if (err) console.log(err)
+            // if publish success it should go here
+            console.log('❤❤❤ --> pub')
+        }
+    )
+    // if we are not specify callback inside publish (only available in confirmChannel) we should call this method
+    await channel.waitForConfirms() // how to test >??
 }
 
 run()
